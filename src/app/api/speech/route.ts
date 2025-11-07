@@ -1,6 +1,7 @@
 // src/app/api/speech/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import OpenAI from "openai";
+import { Buffer } from "node:buffer"; // optional but explicit
 
 export const runtime = "nodejs";
 
@@ -29,10 +30,10 @@ export async function POST(req: NextRequest) {
     }
 
     const tts = await openai.audio.speech.create({
-      model: "tts-1",
+      model: "tts-1",            // or "gpt-4o-mini-tts" / "tts-1-hd"
       voice: "alloy",
       input: text,
-      format: "mp3",
+      response_format: "mp3",    // <- correct key
     });
 
     const arrayBuf = await tts.arrayBuffer();
