@@ -1,11 +1,18 @@
 "use client";
 
-export default function LanguageSelector({ selectedLanguage, setLanguage }) {
+type Props = {
+  selectedLanguage: string;
+  setLanguage: (lang: string) => void;
+};
+
+/** Language dropdown (typed for TS projects). */
+export default function LanguageSelector({ selectedLanguage, setLanguage }: Props) {
   return (
     <select
       className="border p-2 rounded-md shadow-sm bg-white dark:bg-gray-800 dark:text-white"
       value={selectedLanguage}
       onChange={(e) => setLanguage(e.target.value)}
+      aria-label="Select target language"
     >
       <option value="es">Spanish</option>
       <option value="en">English</option>
@@ -19,4 +26,3 @@ export default function LanguageSelector({ selectedLanguage, setLanguage }) {
     </select>
   );
 }
-
