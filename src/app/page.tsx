@@ -1,3 +1,4 @@
+// src/app/page.tsx
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
@@ -5,24 +6,22 @@ import LanguageSelector from "./components/LanguageSelector";
 import TextArea from "./components/TextArea";
 import SpeechButton from "./components/SpeechButton";
 
-/**
- * Home page: orchestrates app state and wires components together.
- * - Keeps a single source of truth for targetLanguage, text, and translatedText
- * - Shows clear error messages and loading states
- * - Persists last results in localStorage
- */
+type LoadingState = { translate: boolean; speech: boolean };
+
+function toErrorMessage(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  if (typeof err === "string") return err;
+  return "Unexpected error";
+}
+
 export default function Home() {
   const [text, setText] = useState<string>("");
   const [translatedText, setTranslatedText] = useState<string>("");
   const [targetLanguage, setTargetLanguage] = useState<string>("es");
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
-  const [loading, setLoading] = useState<{ translate: boolean; speech: boolean }>({
-    translate: false,
-    speech: false,
-  });
+  const [loading, setLoading] = useState<LoadingState>({ translate: false, speech: false });
   const [error, setError] = useState<string>("");
 
-  // Load saved transcript/translation on first render
   useEffect(() => {
     try {
       const savedText = localStorage.getItem("spokenText");
@@ -30,11 +29,10 @@ export default function Home() {
       if (savedText) setText(savedText);
       if (savedTranslation) setTranslatedText(savedTranslation);
     } catch {
-      /* ignore storage errors */
+      /* ignore */
     }
   }, []);
 
-  // Translate current text to the selected targetLanguage (fallback path)
   const translateText = useCallback(async () => {
     if (!text.trim()) return;
     setLoading((s) => ({ ...s, translate: true }));
@@ -49,18 +47,17 @@ export default function Home() {
         const msg = await resp.text().catch(() => "");
         throw new Error(msg || `Translate failed (${resp.status})`);
       }
-      const data = await resp.json();
+      const data = (await resp.json()) as { translation?: string };
       if (!data?.translation) throw new Error("No translation returned from server");
       setTranslatedText(data.translation);
       localStorage.setItem("translatedText", data.translation);
-    } catch (e: any) {
-      setError(e?.message ?? "Translation error");
+    } catch (err: unknown) {
+      setError(toErrorMessage(err));
     } finally {
       setLoading((s) => ({ ...s, translate: false }));
     }
   }, [text, targetLanguage]);
 
-  // Text-to-speech for translated output (if you keep the TTS feature)
   const generateSpeech = useCallback(async () => {
     if (!translatedText.trim()) return;
     setLoading((s) => ({ ...s, speech: true }));
@@ -77,8 +74,8 @@ export default function Home() {
       }
       const blob = await resp.blob();
       setAudioUrl(URL.createObjectURL(blob));
-    } catch (e: any) {
-      setError(e?.message ?? "Speech error");
+    } catch (err: unknown) {
+      setError(toErrorMessage(err));
     } finally {
       setLoading((s) => ({ ...s, speech: false }));
     }
@@ -86,12 +83,8 @@ export default function Home() {
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center p-6 bg-gray-100 dark:bg-gray-900">
-      <h1 className="text-3xl font-bold mb-6 text-blue-700 dark:text-white">
-        Voice Translator
-      </h1>
+      <h1 className="text-3xl font-bold mb-6 text-blue-700 dark:text-white">Voice Translator</h1>
 
-      {/* Records audio and sends to /api/transcribe-and-translate.
-          Calls onResult with (originalText, translation). */}
       <SpeechButton
         targetLanguage={targetLanguage}
         onResult={(spoken: string, translated: string) => {
@@ -100,20 +93,17 @@ export default function Home() {
           try {
             localStorage.setItem("spokenText", spoken);
             localStorage.setItem("translatedText", translated);
-          } catch {/* ignore */}
+          } catch {
+            /* ignore */
+          }
         }}
-        onError={(msg) => setError(msg)}
+        onError={(msg: string) => setError(msg)}
       />
 
       <div className="w-full max-w-xl">
-        <label className="block text-sm font-semibold text-gray-600 dark:text-gray-300">
-          Target language
-        </label>
+        <label className="block text-sm font-semibold text-gray-600 dark:text-gray-300">Target language</label>
         <div className="mt-1">
-          <LanguageSelector
-            selectedLanguage={targetLanguage}
-            setLanguage={setTargetLanguage}
-          />
+          <LanguageSelector selectedLanguage={targetLanguage} setLanguage={setTargetLanguage} />
         </div>
 
         <TextArea
@@ -125,10 +115,11 @@ export default function Home() {
         <button
           onClick={translateText}
           disabled={!text.trim() || loading.translate}
-          className={`px-4 py-2 rounded-lg transition duration-200 mt-2
-            ${(!text.trim() || loading.translate)
+          className={`px-4 py-2 rounded-lg transition duration-200 mt-2 ${
+            !text.trim() || loading.translate
               ? "bg-gray-400 cursor-not-allowed text-white"
-              : "bg-green-600 hover:bg-green-700 text-white"}`}
+              : "bg-green-600 hover:bg-green-700 text-white"
+          }`}
         >
           {loading.translate ? "Translating…" : "Translate"}
         </button>
@@ -138,15 +129,20 @@ export default function Home() {
         <button
           onClick={generateSpeech}
           disabled={!translatedText.trim() || loading.speech}
-          className={`px-4 py-2 rounded-lg transition duration-200 mt-2
-            ${(!translatedText.trim() || loading.speech)
+          className={`px-4 py-2 rounded-lg transition duration-200 mt-2 ${
+            !translatedText.trim() || loading.speech
               ? "bg-gray-400 cursor-not-allowed text-white"
-              : "bg-purple-600 hover:bg-purple-700 text-white"}`}
+              : "bg-purple-600 hover:bg-purple-700 text-white"
+          }`}
         >
           {loading.speech ? "Speaking…" : "Speak"}
         </button>
 
-        {error && <p className="mt-3 text-red-500" role="alert">{error}</p>}
+        {error && (
+          <p className="mt-3 text-red-500" role="alert">
+            {error}
+          </p>
+        )}
 
         {audioUrl && (
           <audio controls className="mt-4 w-full">

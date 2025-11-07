@@ -1,3 +1,4 @@
+// src/app/components/SpeechButton.tsx
 "use client";
 
 import { useRef, useState } from "react";
@@ -8,9 +9,15 @@ type Props = {
   onError?: (message: string) => void;
 };
 
+function toErrorMessage(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  if (typeof err === "string") return err;
+  return "Transcription/translation error";
+}
+
 /**
- * Records from the mic and POSTs audio + targetLanguage to /api/transcribe-and-translate.
- * Ensures stable MediaRecorder with refs, stops tracks to free the mic, and handles codec fallbacks.
+ * Records audio and posts to `/api/transcribe-and-translate`.
+ * Uses refs for MediaRecorder/chunks/stream to avoid re-instantiation on render.
  */
 export default function SpeechButton({ targetLanguage, onResult, onError }: Props) {
   const recorderRef = useRef<MediaRecorder | null>(null);
@@ -26,42 +33,49 @@ export default function SpeechButton({ targetLanguage, onResult, onError }: Prop
     onError?.(message);
   }
 
-  async function startRecording() {
+  async function startRecording(): Promise<void> {
     setLocalError("");
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
 
-      // Prefer webm/opus where supported (best quality/size)
+      // Prefer webm/opus where supported
       const preferred = "audio/webm;codecs=opus";
       const supportsPreferred =
         typeof MediaRecorder !== "undefined" &&
-        (MediaRecorder as any).isTypeSupported?.(preferred);
+        typeof (MediaRecorder as unknown as { isTypeSupported?: (type: string) => boolean }).isTypeSupported ===
+          "function" &&
+        (MediaRecorder as unknown as { isTypeSupported: (type: string) => boolean }).isTypeSupported(preferred);
 
-      const opts = supportsPreferred ? { mimeType: preferred } : undefined;
-      const recorder = new MediaRecorder(stream, opts as MediaRecorderOptions);
+      const options: MediaRecorderOptions | undefined = supportsPreferred ? { mimeType: preferred } : undefined;
+      const recorder = new MediaRecorder(stream, options);
       recorderRef.current = recorder;
       chunksRef.current = [];
 
-      recorder.ondataavailable = (e: BlobEvent) => {
-        if (e.data && e.data.size) chunksRef.current.push(e.data);
+      // BlobEvent type might not be in older TS DOM libs; accept Event and narrow.
+      recorder.ondataavailable = (evt: Event) => {
+        const maybeBlobEvent = evt as unknown as { data?: Blob };
+        if (maybeBlobEvent.data && maybeBlobEvent.data.size) {
+          chunksRef.current.push(maybeBlobEvent.data);
+        }
       };
 
       recorder.onstop = async () => {
         try {
           setLoading(true);
-          const blob = new Blob(chunksRef.current, { type: supportsPreferred ? preferred : "audio/webm" });
+          const mime = supportsPreferred ? preferred : "audio/webm";
+          const blob = new Blob(chunksRef.current, { type: mime });
           const form = new FormData();
           form.append("audio", blob, "audio.webm");
           form.append("targetLanguage", targetLanguage);
 
           const resp = await fetch("/api/transcribe-and-translate", { method: "POST", body: form });
-          const data = await resp.json().catch(() => null);
+          const data = (await resp.json().catch(() => null)) as { text?: string; translation?: string } | null;
 
           if (!resp.ok || !data) {
             throw new Error(
-              (data && (data.error || data.message)) ||
-              `Server error during transcribe/translate (${resp.status})`
+              (data && (("error" in data && String((data as { error?: string }).error)) || "")) ||
+                `Server error (${resp.status})`
             );
           }
           if (!data.text || !data.translation) {
@@ -69,11 +83,11 @@ export default function SpeechButton({ targetLanguage, onResult, onError }: Prop
           }
 
           onResult?.(data.text, data.translation);
-        } catch (e: any) {
-          fail(e?.message ?? "Transcription/translation error");
+        } catch (err: unknown) {
+          fail(toErrorMessage(err));
         } finally {
           setLoading(false);
-          // Always release mic when done
+          // Release mic
           streamRef.current?.getTracks().forEach((t) => t.stop());
           streamRef.current = null;
         }
@@ -81,16 +95,14 @@ export default function SpeechButton({ targetLanguage, onResult, onError }: Prop
 
       recorder.start();
       setRecording(true);
-    } catch (e: any) {
+    } catch {
       fail("Microphone access denied or unavailable");
     }
   }
 
-  function stopRecording() {
+  function stopRecording(): void {
     try {
       recorderRef.current?.stop();
-    } catch {
-      /* ignore stop errors */
     } finally {
       setRecording(false);
     }
@@ -110,8 +122,16 @@ export default function SpeechButton({ targetLanguage, onResult, onError }: Prop
         {recording ? "Stop Recording" : "Start Recording"}
       </button>
 
-      {loading && <p className="text-sm text-gray-400" role="status">Processing…</p>}
-      {localError && <p className="text-sm text-red-500" role="alert">{localError}</p>}
+      {loading && (
+        <p className="text-sm text-gray-400" role="status">
+          Processing…
+        </p>
+      )}
+      {localError && (
+        <p className="text-sm text-red-500" role="alert">
+          {localError}
+        </p>
+      )}
     </div>
   );
 }
