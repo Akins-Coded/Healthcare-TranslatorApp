@@ -106,7 +106,7 @@ const generateSpeech = useCallback(async () => {
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center p-6 bg-gray-100 dark:bg-gray-900">
-      <h1 className="text-3xl font-bold mb-6 text-blue-700 dark:text-white">Voice Translator</h1>
+      <h1 className="text-3xl font-bold mb-6 text-blue-700 dark:text-white">CODED-SOMETHING Voice Translator</h1>
 
       <SpeechButton
         targetLanguage={targetLanguage}
