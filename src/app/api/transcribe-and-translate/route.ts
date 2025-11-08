@@ -1,67 +1,52 @@
 // src/app/api/transcribe-and-translate/route.ts
 import { NextRequest, NextResponse } from "next/server";
-import OpenAI from "openai";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 
 export const runtime = "nodejs";
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY! });
 
 function toErrorMessage(err: unknown): string {
   if (err instanceof Error) return err.message;
   if (typeof err === "string") return err;
-  return "Transcribe & translate failed";
+  return "Request failed";
 }
 
 export async function POST(req: NextRequest) {
   try {
-    const form = await req.formData();
-    const file = form.get("audio") as File | null;
-    const targetLanguage = String(form.get("targetLanguage") || "").trim();
+    const {
+      text,
+      task = "translate",
+      targetLang = "English",
+    }: {
+      text?: string;
+      task?: "translate" | "summarize";
+      targetLang?: string;
+    } = await req.json();
 
-    if (!file) {
-      return NextResponse.json({ error: "Audio file is missing." }, { status: 400 });
-    }
-    if (!targetLanguage) {
-      return NextResponse.json({ error: "Target language is missing." }, { status: 400 });
-    }
-
-    // 1) Transcribe
-    const transcription = await openai.audio.transcriptions.create({
-      model: "whisper-1",
-      file,
-    });
-    const text = transcription.text?.trim();
-    if (!text) {
-      return NextResponse.json({ error: "Failed to transcribe audio." }, { status: 502 });
+    if (!text?.trim()) {
+      return NextResponse.json({ error: "Text is required" }, { status: 400 });
     }
 
-    // 2) Translate
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      temperature: 0.2,
-      messages: [
-        {
-          role: "system",
-          content:
-            "You are a translation assistant. Translate only the user's text. Return ONLY the translated text.",
-        },
-        {
-          role: "user",
-          content: `Translate the following text to ${targetLanguage}:\n\n${text}`,
-        },
-      ],
-    });
-
-    const translation = completion.choices[0]?.message?.content?.trim();
-    if (!translation) {
+    const apiKey = process.env.GOOGLE_API_KEY;
+    if (!apiKey) {
       return NextResponse.json(
-        { error: "Translation failed or returned empty result." },
-        { status: 502 }
+        { error: "GOOGLE_API_KEY is not set" },
+        { status: 500 }
       );
     }
 
-    return NextResponse.json({ text, translation }, { status: 200 });
+    const genAI = new GoogleGenerativeAI(apiKey);
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
+
+    const prompt =
+      task === "translate"
+        ? `Translate to ${targetLang}. Output ONLY the translation:\n\n"""${text}"""`
+        : `Summarize in 3-5 sentences. Output ONLY the summary:\n\n"""${text}"""`;
+
+    const result = await model.generateContent(prompt);
+    const output = result.response.text().trim();
+
+    return NextResponse.json({ result: output }, { status: 200 });
   } catch (err: unknown) {
-    const status = (err as { status?: number })?.status ?? 500;
-    return NextResponse.json({ error: toErrorMessage(err) }, { status });
+    return NextResponse.json({ error: toErrorMessage(err) }, { status: 500 });
   }
 }

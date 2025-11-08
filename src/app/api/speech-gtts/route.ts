@@ -3,17 +3,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
 export const runtime = "nodejs";
-const genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY!);
+
+const genModelId = "gemini-1.5-pro";
 
 /* ---------- Helper types for node-gtts interop ---------- */
-type GttsInstance = {
-  stream(text: string): NodeJS.ReadableStream;
-};
-
+type GttsInstance = { stream(text: string): NodeJS.ReadableStream };
 type GttsFactory = (lang: string) => GttsInstance;
 
 function resolveCjsDefault<T>(mod: unknown): T {
-  // Handles both CJS and ESM module shapes
   if (typeof mod === "function") return mod as T;
   if (mod && typeof mod === "object" && "default" in mod) {
     return (mod as { default: T }).default;
@@ -28,23 +25,36 @@ function toErrorMessage(err: unknown): string {
   return "Request failed";
 }
 
-/* ---------- POST handler ---------- */
 export async function POST(req: NextRequest) {
   try {
-    const { text, task = "translate", targetLang = "English", ttsLang = "en" } =
-      (await req.json()) as {
-        text?: string;
-        task?: "translate" | "summarize";
-        targetLang?: string;
-        ttsLang?: string; // e.g., "en", "fr", "es"
-      };
+    const {
+      text,
+      task = "translate",
+      targetLang = "English",
+      ttsLang = "en", // e.g. "en", "fr", "es"
+    }: {
+      text?: string;
+      task?: "translate" | "summarize";
+      targetLang?: string;
+      ttsLang?: string;
+    } = await req.json();
 
     if (!text?.trim()) {
       return NextResponse.json({ error: "Text is required" }, { status: 400 });
     }
 
-    // 1️⃣ Gemini: translate or summarize
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
+    const apiKey = process.env.GOOGLE_API_KEY;
+    if (!apiKey) {
+      return NextResponse.json(
+        { error: "GOOGLE_API_KEY is not set" },
+        { status: 500 }
+      );
+    }
+
+    // 1) Gemini: translate or summarize
+    const genAI = new GoogleGenerativeAI(apiKey);
+    const model = genAI.getGenerativeModel({ model: genModelId });
+
     const prompt =
       task === "translate"
         ? `Translate to ${targetLang}. Output ONLY the translation:\n\n"""${text}"""`
@@ -53,7 +63,7 @@ export async function POST(req: NextRequest) {
     const result = await model.generateContent(prompt);
     const output = result.response.text().trim();
 
-    // 2️⃣ gTTS (dynamic import without any)
+    // 2) gTTS (dynamic import; typed; no 'any')
     const imported = (await import("node-gtts")) as unknown;
     const gttsFactory: GttsFactory = resolveCjsDefault<GttsFactory>(imported);
     const gtts = gttsFactory(ttsLang);
