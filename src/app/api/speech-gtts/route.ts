@@ -4,7 +4,7 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 
 export const runtime = "nodejs";
 
-const genModelId = "gemini-1.5-pro-latest";
+const genModelId = "gemini-1.5-flash-latest";
 
 /* ---------- Helper types for node-gtts interop ---------- */
 type GttsInstance = { stream(text: string): NodeJS.ReadableStream };
