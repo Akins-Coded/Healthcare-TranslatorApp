@@ -1,6 +1,7 @@
 // src/app/page.tsx
 "use client";
 
+import type React from "react";
 import { useState, useEffect, useCallback } from "react";
 import LanguageSelector from "./components/LanguageSelector";
 import TextArea from "./components/TextArea";
@@ -33,76 +34,70 @@ export default function Home() {
     }
   }, []);
 
-  // src/app/page.tsx – replace translateText()
-const translateText = useCallback(async () => {
-  if (!text.trim()) return;
-  setLoading((s) => ({ ...s, translate: true }));
-  setError("");
-  try {
-    // Map code → name if your server expects names (optional if you map on server)
-    const codeToName: Record<string, string> = {
-      en: "English", es: "Spanish", fr: "French", de: "German",
-      zh: "Chinese", ar: "Arabic", ru: "Russian", hi: "Hindi", ja: "Japanese",
-    };
-    const targetLangName = codeToName[targetLanguage] ?? targetLanguage;
+  const translateText = useCallback(async () => {
+    if (!text.trim()) return;
+    setLoading((s) => ({ ...s, translate: true }));
+    setError("");
+    try {
+      // Map code → name if your server expects names (optional if you map on server)
+      const codeToName: Record<string, string> = {
+        en: "English", es: "Spanish", fr: "French", de: "German",
+        zh: "Chinese", ar: "Arabic", ru: "Russian", hi: "Hindi", ja: "Japanese",
+      };
+      const targetLangName = codeToName[targetLanguage] ?? targetLanguage;
 
-    const resp = await fetch("/api/transcribe-and-translate", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        task: "translate",
-        targetLang: targetLangName,
-        text,
-      }),
-    });
+      const resp = await fetch("/api/transcribe-and-translate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          task: "translate",
+          targetLang: targetLangName,
+          text,
+        }),
+      });
 
-    if (!resp.ok) {
-      const msg = await resp.text().catch(() => "");
-      throw new Error(msg || `Translate failed (${resp.status})`);
+      if (!resp.ok) {
+        const msg = await resp.text().catch(() => "");
+        throw new Error(msg || `Translate failed (${resp.status})`);
+      }
+
+      const data = (await resp.json()) as { result?: string };
+      if (!data?.result) throw new Error("No translation returned from server");
+
+      setTranslatedText(data.result);
+      localStorage.setItem("translatedText", data.result);
+    } catch (err: unknown) {
+      setError(toErrorMessage(err));
+    } finally {
+      setLoading((s) => ({ ...s, translate: false }));
     }
+  }, [text, targetLanguage]);
 
-    const data = (await resp.json()) as { result?: string };
-    if (!data?.result) throw new Error("No translation returned from server");
-
-    setTranslatedText(data.result);
-    localStorage.setItem("translatedText", data.result);
-  } catch (err: unknown) {
-    setError(toErrorMessage(err));
-  } finally {
-    setLoading((s) => ({ ...s, translate: false }));
-  }
-}, [text, targetLanguage]);
-
-
-  // src/app/page.tsx – replace generateSpeech()
-const generateSpeech = useCallback(async () => {
-  if (!translatedText.trim()) return;
-  setLoading((s) => ({ ...s, speech: true }));
-  setError("");
-  try {
-    const resp = await fetch("/api/speech-gtts", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        // Input is plain text → TTS
-        text: translatedText,
-        task: "translate",   // arbitrary; your route ignores task for pure TTS
-        ttsLang: targetLanguage, // pass language code for gTTS voice selection
-      }),
-    });
-    if (!resp.ok) {
-      const msg = await resp.text().catch(() => "");
-      throw new Error(msg || `Speech failed (${resp.status})`);
+  const generateSpeech = useCallback(async () => {
+    if (!translatedText.trim()) return;
+    setLoading((s) => ({ ...s, speech: true }));
+    setError("");
+    try {
+      const resp = await fetch("/api/speech-gtts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          text: translatedText,
+          ttsLang: targetLanguage, // language/voice for gTTS
+        }),
+      });
+      if (!resp.ok) {
+        const msg = await resp.text().catch(() => "");
+        throw new Error(msg || `Speech failed (${resp.status})`);
+      }
+      const blob = await resp.blob();
+      setAudioUrl(URL.createObjectURL(blob));
+    } catch (err: unknown) {
+      setError(toErrorMessage(err));
+    } finally {
+      setLoading((s) => ({ ...s, speech: false }));
     }
-    const blob = await resp.blob();
-    setAudioUrl(URL.createObjectURL(blob));
-  } catch (err: unknown) {
-    setError(toErrorMessage(err));
-  } finally {
-    setLoading((s) => ({ ...s, speech: false }));
-  }
-}, [translatedText, targetLanguage]);
-
+  }, [translatedText, targetLanguage]);
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center p-6 bg-gray-100 dark:bg-gray-900">
