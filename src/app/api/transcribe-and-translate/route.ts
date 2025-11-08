@@ -1,37 +1,9 @@
 // src/app/api/transcribe-and-translate/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { GoogleGenerativeAI } from "@google/generative-ai";
-
+import { pickModel } from "@/lib/genai";
 
 export const runtime = "nodejs";
-
-/** ----- Model picker (inserted below imports) ----- */
-type ModelInfo = { name: string; supportedGenerationMethods?: string[] };
-
-async function pickModel(
-  genAI: GoogleGenerativeAI,
-  prefer: ("pro" | "flash")[] = ["pro", "flash"]
-): Promise<string> {
-  // Ask the API which models your key can use
-  const res = await genAI.listModels();
-  const models = (res.models || []) as ModelInfo[];
-
-  // keep only those that support generateContent
-  const generative = models.filter((m) =>
-    m.supportedGenerationMethods?.includes("generateContent")
-  );
-
-  // try to pick by preference order (pro, then flash)
-  for (const p of prefer) {
-    const chosen = generative.find((m) => m.name.toLowerCase().includes(p));
-    if (chosen) return chosen.name; // e.g. "models/gemini-1.5-flash"
-  }
-
-  // fall back to the first generative model
-  if (generative[0]) return generative[0].name;
-
-  throw new Error("No available Gemini model supports generateContent for this key.");
-}
 
 /** ----- Request/response types (no `any`) ----- */
 type Task = "translate" | "summarize";
@@ -106,7 +78,7 @@ export async function POST(req: NextRequest) {
     }
 
     const genAI = new GoogleGenerativeAI(apiKey);
-    const modelName = await pickModel(genAI); // e.g. "models/gemini-1.5-flash"
+    const modelName = pickModel(); // e.g. "gemini-1.5-flash-latest" or env override
     const model = genAI.getGenerativeModel({ model: modelName });
     console.log("Using Gemini model:", modelName);
 
