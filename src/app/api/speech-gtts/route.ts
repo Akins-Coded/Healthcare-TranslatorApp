@@ -1,8 +1,6 @@
 // src/app/api/speech-gtts/route.ts
 import { NextRequest, NextResponse } from "next/server";
-import { Buffer } from "node:buffer";
 import { GoogleGenerativeAI } from "@google/generative-ai";
-import gTTS from "node-gtts";
 
 export const runtime = "nodejs";
 const genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY!);
@@ -20,22 +18,27 @@ export async function POST(req: NextRequest) {
         text?: string;
         task?: "translate" | "summarize";
         targetLang?: string;
-        ttsLang?: string; // e.g. "en", "fr", "es"
+        ttsLang?: string; // e.g., "en", "fr", "es"
       };
 
     if (!text?.trim()) {
       return NextResponse.json({ error: "Text is required" }, { status: 400 });
     }
 
+    // 1) Gemini: translate or summarize
     const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
     const prompt =
       task === "translate"
         ? `Translate to ${targetLang}. Output ONLY the translation:\n\n"""${text}"""`
         : `Summarize in 3-5 sentences. Output ONLY the summary:\n\n"""${text}"""`;
+
     const result = await model.generateContent(prompt);
     const output = result.response.text().trim();
 
-    const gtts = gTTS(ttsLang);
+    // 2) gTTS (dynamic import for CJS)
+    const gttsModule: any = (await import("node-gtts")).default ?? (await import("node-gtts"));
+    const gtts = gttsModule(ttsLang);
+
     const audioBuf: Buffer = await new Promise((resolve, reject) => {
       const chunks: Buffer[] = [];
       const stream = gtts.stream(output);
