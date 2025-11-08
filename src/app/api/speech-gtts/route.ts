@@ -4,6 +4,15 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 
 export const runtime = "nodejs";
 
+/* ---------- Helper: dynamic Gemini model selection ---------- */
+async function pickModel(_genAI: GoogleGenerativeAI): Promise<string> {
+  // 1) allow env override
+  if (process.env.GENAI_MODEL?.trim()) return process.env.GENAI_MODEL.trim();
+
+  // 2) trivial heuristic: longer inputs → pro, otherwise flash
+  // (you can pass the length into this function if you want)
+  return "gemini-1.5-flash-latest";
+}
 
 /* ---------- Helper types for node-gtts interop ---------- */
 type GttsInstance = { stream(text: string): NodeJS.ReadableStream };
@@ -52,11 +61,9 @@ export async function POST(req: NextRequest) {
 
     // 1) Gemini: translate or summarize
     const genAI = new GoogleGenerativeAI(apiKey);
-    const modelName = await pickModel(genAI); // returns e.g. "models/gemini-1.5-flash"
+    const modelName = await pickModel(genAI); // returns e.g. "gemini-1.5-flash-latest"
     const model = genAI.getGenerativeModel({ model: modelName });
     console.log("Using Gemini model:", modelName);
-
-
 
     const prompt =
       task === "translate"

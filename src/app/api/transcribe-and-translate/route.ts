@@ -2,6 +2,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
+
 export const runtime = "nodejs";
 
 /** ----- Model picker (inserted below imports) ----- */
