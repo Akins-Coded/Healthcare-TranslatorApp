@@ -5,12 +5,30 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 export const runtime = "nodejs";
 const genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY!);
 
+/* ---------- Helper types for node-gtts interop ---------- */
+type GttsInstance = {
+  stream(text: string): NodeJS.ReadableStream;
+};
+
+type GttsFactory = (lang: string) => GttsInstance;
+
+function resolveCjsDefault<T>(mod: unknown): T {
+  // Handles both CJS and ESM module shapes
+  if (typeof mod === "function") return mod as T;
+  if (mod && typeof mod === "object" && "default" in mod) {
+    return (mod as { default: T }).default;
+  }
+  throw new Error("Invalid node-gtts module shape");
+}
+
+/* ---------- Error helper ---------- */
 function toErrorMessage(err: unknown): string {
   if (err instanceof Error) return err.message;
   if (typeof err === "string") return err;
   return "Request failed";
 }
 
+/* ---------- POST handler ---------- */
 export async function POST(req: NextRequest) {
   try {
     const { text, task = "translate", targetLang = "English", ttsLang = "en" } =
@@ -25,7 +43,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Text is required" }, { status: 400 });
     }
 
-    // 1) Gemini: translate or summarize
+    // 1️⃣ Gemini: translate or summarize
     const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
     const prompt =
       task === "translate"
@@ -35,9 +53,10 @@ export async function POST(req: NextRequest) {
     const result = await model.generateContent(prompt);
     const output = result.response.text().trim();
 
-    // 2) gTTS (dynamic import for CJS)
-    const gttsModule: any = (await import("node-gtts")).default ?? (await import("node-gtts"));
-    const gtts = gttsModule(ttsLang);
+    // 2️⃣ gTTS (dynamic import without any)
+    const imported = (await import("node-gtts")) as unknown;
+    const gttsFactory: GttsFactory = resolveCjsDefault<GttsFactory>(imported);
+    const gtts = gttsFactory(ttsLang);
 
     const audioBuf: Buffer = await new Promise((resolve, reject) => {
       const chunks: Buffer[] = [];
