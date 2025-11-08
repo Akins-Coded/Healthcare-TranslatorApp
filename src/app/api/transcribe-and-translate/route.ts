@@ -4,6 +4,34 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 
 export const runtime = "nodejs";
 
+/** ----- Model picker (inserted below imports) ----- */
+type ModelInfo = { name: string; supportedGenerationMethods?: string[] };
+
+async function pickModel(
+  genAI: GoogleGenerativeAI,
+  prefer: ("pro" | "flash")[] = ["pro", "flash"]
+): Promise<string> {
+  // Ask the API which models your key can use
+  const res = await genAI.listModels();
+  const models = (res.models || []) as ModelInfo[];
+
+  // keep only those that support generateContent
+  const generative = models.filter((m) =>
+    m.supportedGenerationMethods?.includes("generateContent")
+  );
+
+  // try to pick by preference order (pro, then flash)
+  for (const p of prefer) {
+    const chosen = generative.find((m) => m.name.toLowerCase().includes(p));
+    if (chosen) return chosen.name; // e.g. "models/gemini-1.5-flash"
+  }
+
+  // fall back to the first generative model
+  if (generative[0]) return generative[0].name;
+
+  throw new Error("No available Gemini model supports generateContent for this key.");
+}
+
 /** ----- Request/response types (no `any`) ----- */
 type Task = "translate" | "summarize";
 
@@ -32,11 +60,10 @@ function isRequestBody(v: unknown): v is RequestBody {
   if (typeof v !== "object" || v === null) return false;
   const o = v as Record<string, unknown>;
   const validTask =
-    o.task === undefined ||
-    o.task === "translate" ||
-    o.task === "summarize";
+    o.task === undefined || o.task === "translate" || o.task === "summarize";
   const validText = o.text === undefined || typeof o.text === "string";
-  const validTarget = o.targetLang === undefined || typeof o.targetLang === "string";
+  const validTarget =
+    o.targetLang === undefined || typeof o.targetLang === "string";
   return validTask && validText && validTarget;
 }
 
@@ -78,7 +105,9 @@ export async function POST(req: NextRequest) {
     }
 
     const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash-latest" });
+    const modelName = await pickModel(genAI); // e.g. "models/gemini-1.5-flash"
+    const model = genAI.getGenerativeModel({ model: modelName });
+    console.log("Using Gemini model:", modelName);
 
     const prompt = buildPrompt(task, text, targetLang);
     const result = await model.generateContent(prompt);

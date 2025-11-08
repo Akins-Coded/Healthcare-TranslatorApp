@@ -4,7 +4,6 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 
 export const runtime = "nodejs";
 
-const genModelId = "gemini-1.5-flash-latest";
 
 /* ---------- Helper types for node-gtts interop ---------- */
 type GttsInstance = { stream(text: string): NodeJS.ReadableStream };
@@ -53,7 +52,11 @@ export async function POST(req: NextRequest) {
 
     // 1) Gemini: translate or summarize
     const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: genModelId });
+    const modelName = await pickModel(genAI); // returns e.g. "models/gemini-1.5-flash"
+    const model = genAI.getGenerativeModel({ model: modelName });
+    console.log("Using Gemini model:", modelName);
+
+
 
     const prompt =
       task === "translate"
